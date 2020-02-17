@@ -1,13 +1,24 @@
+/**
+ * @File Name          : ImpossibleDataSourceConnection.cls
+ * @Description        :
+ * @Author             : Dan Appleman
+ * @Group              :
+ * @Last Modified By   : Bill Anderson
+ * @Last Modified On   : 2/17/2020, 4:19:32 PM
+ * @Modification Log   :
+ * Ver       Date            Author                 Modification
+ * 1.0    2/17/2020   Bill Anderson     Fixed Offset
+ **/
 global without sharing class ImpossibleDataSourceConnection extends DataSource.Connection {
 
-    
+
     global ImpossibleDataSourceConnection(DataSource.ConnectionParams connectionParams) {
     }
 
     global ImpossibleDataSourceConnection() {
     }
 
-    override global List<DataSource.Table> sync() 
+    override global List<DataSource.Table> sync()
     {
         List<DataSource.Table> tables = new List<DataSource.Table>();
         // Profiles table
@@ -71,7 +82,7 @@ global without sharing class ImpossibleDataSourceConnection extends DataSource.C
         tables.add(t);
 
 
-        for(Datasource.Column c: columns) system.debug(c);
+        // for(Datasource.Column c: columns) system.debug(c);
         SetupColumnLabels(tables);
         return tables;
     }
@@ -81,34 +92,34 @@ global without sharing class ImpossibleDataSourceConnection extends DataSource.C
     override global DataSource.TableResult query(DataSource.QueryContext context) {
         if (context.tableSelection.columnsSelected.size() == 1 &&
             context.tableSelection.columnsSelected.get(0).aggregation ==
-            DataSource.QueryAggregation.COUNT) 
+            DataSource.QueryAggregation.COUNT)
         {
-            List<Map<String, Object>> countResponse = new List<Map<String, Object>>();
+            List<Map<String, Object> > countResponse = new List<Map<String, Object> >();
             Map<String, Object> countRow = new Map<String, Object>();
             integer count = Database.countQuery(getCountQuery(context));
             countRow.put(context.tableSelection.columnsSelected.get(0).columnName, count);
             countResponse.add(countRow);
             return DataSource.TableResult.get(context,countResponse);
-        } else 
+        } else
         {
             List<SObject> rows = Database.query(getSoqlQuery(context));
             Integer totalRows = Database.countquery(getCountQuery(context));
 
-            List<Map<String,Object>> rowsList = new List<Map<String, Object>>();
+            List<Map<String,Object> > rowsList = new List<Map<String, Object> >();
             for(SObject row: rows)
             {
                 Map<String, Object> rowResults = new Map<String, Object>();
-                for(Datasource.ColumnSelection c: context.tableSelection.columnsSelected) 
+                for(Datasource.ColumnSelection c: context.tableSelection.columnsSelected)
                 {
                     Object cv = getColumnValue(context.tableSelection.tableSelected, row,c.columnName);
-                    system.debug('setting ' + c.columnName + ' value ' + cv);
+                    //system.debug('setting ' + c.columnName + ' value ' + cv);
                     rowResults.put(c.columnName, cv);
                 }
                 rowsList.add(rowResults);
             }
             Datasource.TableResult queryResult = DataSource.TableResult.get(context,rowsList);
             queryResult.totalSize = totalRows;
-            system.debug(queryResult);
+            system.debug('+++ query-result:'+queryResult);
             return queryResult;
         }
     }
@@ -129,44 +140,51 @@ global without sharing class ImpossibleDataSourceConnection extends DataSource.C
         return permissions;
     }
 
-    private Map<String, String> mapImpossibleTableToStandardClass = 
+    private Map<String, String> mapImpossibleTableToStandardClass =
         new Map<String,String> {'ImpossibleProfiles' => 'Profile',
                                 'ImpossibleClasses' => 'ApexClass',
                                 'ImpossiblePermissionSetAssignment' => 'PermissionSetAssignment',
                                 'ImpossibleGroupMembers' => 'GroupMember' };
 
     private String getCountQuery(DataSource.QueryContext context) {
-        system.debug('getCountQuery ' + context);
+        system.debug('+++getCountQuery ' + context);
         String baseQuery = 'SELECT COUNT() FROM ' + mapImpossibleTableToStandardClass.get(context.tableSelection.tableSelected);
         String filter = getFilterSoqlTerm(context.tableSelection.filter);
-        if (filter.length() > 0)
-        baseQuery += ' WHERE ' + filter;
-        system.debug('getCountQuery: ' + baseQuery);
+        if (string.isNotEmpty(filter)
+            && filter.length() > 0) {
+            baseQuery += ' WHERE ' + filter.trim();
+        }
+        system.debug('+++getCountQuery: ' + baseQuery);
         return baseQuery;
     }
 
     private String getSoqlQuery(DataSource.QueryContext context) {
-        system.debug('Query context ' + context);
+        // system.debug('+++Query context ' + context);
         Datasource.TableSelection table = context.tableSelection;
         List<Datasource.ColumnSelection> columns = table.columnsSelected;
         Set<String> fields = new Set<String>();
-        for(Datasource.ColumnSelection c: columns) 
+        for(Datasource.ColumnSelection c: columns)
         {
-            system.debug(c);
+            // system.debug('+++ colums:'+c);
             fields.add(mapColumnName(table.tableSelected, c.columnName));
         }
         String baseQuery = 'Select ' + string.join(new List<String>(fields), ',');
         baseQuery+= ' From ' + mapImpossibleTableToStandardClass.get(table.tableSelected);
-        if(context.offset!=0)
-        {
-            baseQuery+= ' Offset :context.query ';
-        }
+
         String filter = getFilterSoqlTerm(context.tableSelection.filter);
-        if (filter.length() > 0) baseQuery += ' WHERE ' + filter;
+        if (string.isNotEmpty(filter)
+            &&  filter.length() > 0) {
+            baseQuery += ' WHERE ' + filter;
+        }
         String order = getOrderSoqlTerm(context.tableSelection.order);
         baseQuery += order;
         baseQuery+= ' Limit ' + String.valueOf(context.maxResults);
-        system.debug('getSoqlQuery: ' + baseQuery);
+        // BJA - offset is a numeric value, placed at the end of limit 
+        if(context.offset!=0)
+        {
+            baseQuery += ' Offset ' + context.offset ;
+        }
+        system.debug('+++getSoqlQuery: ' + baseQuery);
         return baseQuery;
     }
 
@@ -176,18 +194,19 @@ global without sharing class ImpossibleDataSourceConnection extends DataSource.C
         if (apexName.equalsIgnoreCase('ExternalId')) return 'Id';
         if (apexName.equalsIgnoreCase('DisplayUrl')) return 'Id';
         switch on tablename {
-        when 'ImpossibleClasses'
+            when 'ImpossibleClasses'
+            {
+                // system.debug('++++ impossible-classes, apexName:'+ apexName);
+            }
+            when 'ImpossibleProfiles'
             {
             }
-        when 'ImpossibleProfiles'
-            {
-            }
-        when 'ImpossiblePermissionSetAssignment'
+            when 'ImpossiblePermissionSetAssignment'
             {
                 if(apexName.equalsIgnoreCase('Description')) return 'PermissionSet.Description';
                 if(apexName.equalsIgnoreCase('Name')) return 'PermissionSet.Name';
             }
-        when 'ImpossibleGroupMembers'
+            when 'ImpossibleGroupMembers'
             {
                 if(apexName.equalsIgnoreCase('Description')) return 'PermissionSet.Description';
                 if(apexName.equalsIgnoreCase('Name')) return 'Group.Name';
@@ -201,16 +220,17 @@ global without sharing class ImpossibleDataSourceConnection extends DataSource.C
     private Object getColumnValue(String tablename, SObject obj, String fieldName)
     {
         if(fieldName==null) return null;
-        if (fieldName.equalsIgnoreCase('ExternalId')) 
+        if (fieldName.equalsIgnoreCase('ExternalId'))
         {
             return (string)obj.get('Id');
         }
-        if (fieldName.equalsIgnoreCase('DisplayUrl')) 
+        if (fieldName.equalsIgnoreCase('DisplayUrl'))
         {
             return Url.getSalesforceBaseUrl().toExternalForm() +'/' + obj.get('Id');
         }
         switch on tablename {
             when 'ImpossibleClasses' {
+                // system.debug('++++ impossible-classes, fieldname:'+ fieldname);
                 if(fieldName.equalsIgnoreCase('Creator')) return (String)obj.get('CreatedById');
             }
             when 'ImpossiblePermissionSetAssignment'
@@ -235,8 +255,8 @@ global without sharing class ImpossibleDataSourceConnection extends DataSource.C
         if(resultObj instanceOf ID) return (string)resultObj;
         return resultObj;
     }
-    
-    private Map<DataSource.FilterType, String> filterMap = new Map<DataSource.FilterType, String>{
+
+    private Map<DataSource.FilterType, String> filterMap = new Map<DataSource.FilterType, String> {
         DataSource.FilterType.AND_ => ' AND ',
         DataSource.FilterType.CONTAINS => ' LIKE \'%{0}%\'',
         DataSource.FilterType.ENDS_WITH => ' LIKE \'%{0}\'',
@@ -278,9 +298,9 @@ global without sharing class ImpossibleDataSourceConnection extends DataSource.C
             String filterTerm = filtermap.get(filter.type);
             if(filterTerm.contains('{0}'))
             {
-                result+= mapColumnName(filter.tableName, filter.columnName) + string.format(filterTerm, new List<String>{String.valueOf(filter.columnValue)});
+                result+= mapColumnName(filter.tableName, filter.columnName) + string.format(filterTerm, new List<String> {String.valueOf(filter.columnValue)});
             }
-            else 
+            else
             {
                 result += mapColumnName(filter.tableName, filter.columnName) + filterTerm + wrapValue(filter.columnValue);
             }
@@ -290,16 +310,16 @@ global without sharing class ImpossibleDataSourceConnection extends DataSource.C
 
     private String getOrderSoqlTerm(List<DataSource.Order> orders)
     {
-       if(orders==null || orders.size()>0) return '';
-       string result = '';
-       List<String> orderItems = new List<String>();
-       for(DataSource.Order order: orders)
-       {
-           if(order==null) break;
-            orderitems.add(order.columnName + ((order.direction== Datasource.OrderDirection.ASCENDING)? ' ASC ':' DESC '));
-       }
-       if(orderItems.size()>0) result = ' ORDER BY ' + string.join(orderItems, ',');
-       return result;
+        if(orders==null || orders.size()>0) return '';
+        string result = '';
+        List<String> orderItems = new List<String>();
+        for(DataSource.Order order: orders)
+        {
+            if(order==null) break;
+            orderitems.add(order.columnName + ((order.direction== Datasource.OrderDirection.ASCENDING) ? ' ASC ' : ' DESC '));
+        }
+        if(orderItems.size()>0) result = ' ORDER BY ' + string.join(orderItems, ',');
+        return result;
     }
 
     private String wrapValue(Object foundValue) {
@@ -346,14 +366,14 @@ global without sharing class ImpossibleDataSourceConnection extends DataSource.C
             {
                 obj = obj.getSObject(fieldsegments[p]);
             }
-            return obj.get(fieldsegments[fieldsegments.size()-1]);            
+            return obj.get(fieldsegments[fieldsegments.size()-1]);
         }
         else return obj.get(fieldname);
     }
 
     global override List<DataSource.UpsertResult> upsertRows(DataSource.UpsertContext context) {
         List<DataSource.UpsertResult> results = new List<DataSource.UpsertResult>();
-        List<Map<String, Object>> rows = context.rows;
+        List<Map<String, Object> > rows = context.rows;
         for(Map<String,Object> row: rows)
         {
             results.add(DataSource.UpsertResult.success(String.valueOf(row.get('ExternalId'))));
